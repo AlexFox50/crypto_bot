@@ -1,16 +1,26 @@
 import os
+import threading
 import time
+from flask import Flask
 import pandas as pd
 import requests
 import schedule
 from google import genai
 
-# --- НАСТРОЙКИ ЧЕРЕЗ ПЕРЕМЕННЫЕ ОКРУЖЕНИЯ ---
+# --- НАСТРОЙКИ ---
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 CHAT_ID = os.getenv("CHAT_ID")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 
 ai_client = genai.Client(api_key=GEMINI_API_KEY)
+
+# 1. Сразу создаем Flask-приложение
+app = Flask(__name__)
+
+
+@app.route("/")
+def home():
+  return "🤖 Crypto AI Agent is running 24/7!"
 
 
 def send_telegram_message(message):
@@ -19,89 +29,9 @@ def send_telegram_message(message):
   try:
     response = requests.post(url, json=payload, timeout=5)
     if response.status_code == 200:
-      print("📤 Успешно отправлено в Telegram!")
+      print("📤 Уведомление успешно отправлено в Telegram!")
   except Exception as e:
     print(f"Ошибка Telegram: {e}")
-
-
-def get_ai_analysis(price, rsi, ema10, ema20):
-  prompt = f"""
-    Ты профессиональный криптотрейдер и аналитик рынка. 
-    Вот текущие технические данные по Биткоину (BTC/USD):
-    - Текущая цена: ${price:,.2f}
-    - RSI (14): {rsi:.2f}
-    - EMA 10: ${ema10:,.2f}     - EMA 20:${ema20:,.2f}
-    
-    Дай короткий, структурированный и профессиональный вердикт по рынку (в стиле риск-менеджера). 
-    Оцени, есть ли потенциальная точка для покупки (Long) или продажи (Short), учитывая текущий RSI и тренд. 
-    Пиши на русском языке, будь лаконичен (до 4-5 предложений).
-    """
-  for attempt in range(3):
-    try:
-      response = ai_client.models.generate_content(
-          model='gemini-3.8-flash', contents=prompt
-      )
-      return response.text
-    except Exception as e:
-      if attempt < 2:
-        time.sleep(2)
-      else:
-        return (
-            "ИИ временно перегружен, но технические индикаторы рассчитаны"
-            " успешно."
-        )
-
-
-def job_analyze_btc():
-  print("\n--- Запуск плановой проверки рынка BTC с ИИ-анализом ---")
-  try:
-    url = (
-        "https://api.coingecko.com/api/v3/coins/bitcoin/market_chart?vs_currency=usd&days=30"
-    )
-    response = requests.get(url, timeout=10)
-    data = response.json()
-
-    prices = data["prices"]
-    df = pd.DataFrame(prices, columns=["timestamp", "close"])
-    df["timestamp"] = pd.to_datetime(df["timestamp"], unit="ms")
-
-    df["ema_10"] = df["close"].ema(span=10, adjust=False).mean()
-    df["ema_20"] = df["close"].ema(span=20, adjust=False).mean()
-
-    delta = df["close"].diff()
-    gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
-    loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
-    rs = gain / loss
-    df["rsi"] = 100 - (100 / (1 + rs))
-
-    last_row = df.iloc[-1]
-    price = last_row["close"]
-    rsi = last_row["rsi"]
-    ema10 = last_row["ema_10"]
-    ema20 = last_row["ema_20"]
-
-    ai_commentary = get_ai_analysis(price, rsi, ema10, ema20)
-
-    signal_text = (
-        f"🤖 *ИИ-Агент по BTC/USD (Cloud Worker)*\n\n💵 Цена:"
-        f" `${price:,.2f}`\n📊 RSI (14): `{rsi:.2f}`\n📈 EMA 10:"
-        f" `{ema10:,.2f}`\n📉 EMA 20: `{ema20:,.2f}`\n\n🧠 *Мнение"
-        f" ИИ-аналитика:*\n{ai_commentary}"
-    )
-
-    send_telegram_message(signal_text)
-  except Exception as e:
-    print(f"Ошибка при анализе рынка: {e}")
-
-
-if __name__ == "__main__":
-  print("🤖 ИИ-агент запущен в фоновом режиме...")
-  job_analyze_btc()
-  schedule.every(1).hours.do(job_analyze_btc)
-
-  while True:
-    schedule.run_pending()
-    time.sleep(1)
 
 
 def get_ai_analysis(price, rsi, ema10, ema20):
@@ -163,10 +93,9 @@ def job_analyze_btc():
     ai_commentary = get_ai_analysis(price, rsi, ema10, ema20)
 
     signal_text = (
-        f"🤖 *ИИ-Агент по BTC/USD (Render Cloud)*\n\n💵 Цена:"
-        f" `${price:,.2f}`\n📊 RSI (14): `{rsi:.2f}`\n📈 EMA 10:"
-        f" `{ema10:,.2f}`\n📉 EMA 20: `{ema20:,.2f}`\n\n🧠 *Мнение"
-        f" ИИ-аналитика:*\n{ai_commentary}"
+        f"🤖 *ИИ-Агент по BTC/USD (Render Free)*\n\n💵 Цена: `${price:,.2f}`\n📊"
+        f" RSI (14): `{rsi:.2f}`\n📈 EMA 10: `{ema10:,.2f}`\n📉 EMA 20:"
+        f" `{ema20:,.2f}`\n\n🧠 *Мнение ИИ-аналитика:*\n{ai_commentary}"
     )
 
     send_telegram_message(signal_text)
@@ -175,8 +104,13 @@ def job_analyze_btc():
 
 
 def run_scheduler():
-  """Запуск фонового агента в отдельном потоке"""
+  # Небольшая пауза при старте, чтобы веб-сервер успел на 100% занять порт
+  time.sleep(5)
+
+  # Первый запуск проверки
   job_analyze_btc()
+
+  # Расписание на каждый час
   schedule.every(1).hours.do(job_analyze_btc)
   while True:
     schedule.run_pending()
@@ -184,10 +118,10 @@ def run_scheduler():
 
 
 if __name__ == "__main__":
-  # Запускаем планировщик в фоновом потоке
+  # Запускаем агента в фоновом потоке
   t = threading.Thread(target=run_scheduler, daemon=True)
   t.start()
 
-  # Запускаем веб-сервер Flask (требуется для Render)
+  # МГНОВЕННО запускаем веб-сервер Flask, чтобы Render сразу увидел открытый порт
   port = int(os.environ.get("PORT", 10000))
   app.run(host="0.0.0.0", port=port)
