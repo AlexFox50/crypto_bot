@@ -3,3 +3,4 @@ requests
 schedule
 google-genai
 ccxt
+flask
