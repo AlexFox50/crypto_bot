@@ -18,13 +18,11 @@ def home():
     CHAT_ID = os.getenv("CHAT_ID")
     GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 
-    # Единое подключение к Kraken с таймаутом
-    exchange = ccxt.kraken({"timeout": 4000})
-
     # --- 1. Сбор данных по BTC (Kraken) ---
     btc_price, btc_rsi, btc_ema10, btc_ema20 = 0, 0, 0, 0
     try:
-      bars_btc = exchange.fetch_ohlcv("BTC/USD", timeframe="1h", limit=30)
+      exchange_kraken = ccxt.kraken({"timeout": 4000})
+      bars_btc = exchange_kraken.fetch_ohlcv("BTC/USD", timeframe="1h", limit=30)
       df_btc = pd.DataFrame(
           bars_btc,
           columns=["timestamp", "open", "high", "low", "close", "volume"],
@@ -42,12 +40,17 @@ def home():
       btc_price, btc_rsi = last_btc["close"], last_btc["rsi"]
       btc_ema10, btc_ema20 = last_btc["ema_10"], last_btc["ema_20"]
     except Exception as e:
-      print(f"⚠️ Ошибка BTC на Kraken: {e}")
+      print(f"⚠️ Ошибка BTC: {e}")
 
-    # --- 2. Сбор данных по GRAM (Kraken) ---
+    # Подключаем Bybit для альткоинов GRAM и AZTEC
+    exchange_bybit = ccxt.bybit({"timeout": 4000})
+
+    # --- 2. Сбор данных по GRAM (Bybit) ---
     gram_price, gram_rsi, gram_ema10, gram_ema20 = 0, 0, 0, 0
     try:
-      bars_gram = exchange.fetch_ohlcv("GRAM/USD", timeframe="1h", limit=30)
+      bars_gram = exchange_bybit.fetch_ohlcv(
+          "GRAM/USDT", timeframe="1h", limit=30
+      )
       df_gram = pd.DataFrame(
           bars_gram,
           columns=["timestamp", "open", "high", "low", "close", "volume"],
@@ -67,12 +70,14 @@ def home():
       gram_price, gram_rsi = last_gram["close"], last_gram["rsi"]
       gram_ema10, gram_ema20 = last_gram["ema_10"], last_gram["ema_20"]
     except Exception as e:
-      print(f"⚠️ Ошибка GRAM на Kraken: {e}")
+      print(f"⚠️ Ошибка GRAM на Bybit: {e}")
 
-    # --- 3. Сбор данных по AZTEC (Kraken) ---
+    # --- 3. Сбор данных по AZTEC (Bybit) ---
     aztec_price, aztec_rsi, aztec_ema10, aztec_ema20 = 0, 0, 0, 0
     try:
-      bars_aztec = exchange.fetch_ohlcv("AZTEC/USD", timeframe="1h", limit=30)
+      bars_aztec = exchange_bybit.fetch_ohlcv(
+          "AZTEC/USDT", timeframe="1h", limit=30
+      )
       df_aztec = pd.DataFrame(
           bars_aztec,
           columns=["timestamp", "open", "high", "low", "close", "volume"],
@@ -94,18 +99,20 @@ def home():
       aztec_price, aztec_rsi = last_aztec["close"], last_aztec["rsi"]
       aztec_ema10, aztec_ema20 = last_aztec["ema_10"], last_aztec["ema_20"]
     except Exception as e:
-      print(f"⚠️ Ошибка AZTEC на Kraken: {e}")
+      print(f"⚠️ Ошибка AZTEC на Bybit: {e}")
 
     # --- 4. Получение аналитики от ИИ ---
-    ai_commentary = "ИИ-анализ отключен."
+    ai_commentary = "ИИ-анализ временно недоступен."
     if GEMINI_API_KEY:
       try:
         client = genai.Client(api_key=GEMINI_API_KEY)
         prompt = (
-            f"Ты профессиональный криптотрейдер. Данные с Kraken:\n"
-            f"1. BTC/USD: Цена ${btc_price:,.2f}, RSI {btc_rsi:.2f}\n"
-            f"2. GRAM/USD: Цена ${gram_price:.4f}, RSI {gram_rsi:.2f}\n"
-            f"3. AZTEC/USD: Цена ${aztec_price:.4f}, RSI {aztec_rsi:.2f}\n"
+            f"Ты профессиональный криптотрейдер. Данные:\n"
+            f"1. BTC/USD (Kraken): Цена ${btc_price:,.2f}, RSI {btc_rsi:.2f}\n"
+            f"2. GRAM/USDT (Bybit): Цена ${gram_price:.4f}, RSI"
+            f" {gram_rsi:.2f}\n"
+            f"3. AZTEC/USDT (Bybit): Цена ${aztec_price:.4f}, RSI"
+            f" {aztec_rsi:.2f}\n"
             "Дай краткий аналитический вердикт по активам (до 4 предложений) на"
             " русском языке."
         )
@@ -118,16 +125,16 @@ def home():
 
     # --- 5. Формирование отчета ---
     signal_text = (
-        f"🤖 Крипто Агент (Kraken: BTC, GRAM & AZTEC)\n\n"
-        f"🪙 *BTC/USD*\n"
+        f"🤖 Крипто Агент (BTC, GRAM & AZTEC)\n\n"
+        f"🪙 *BTC/USD (Kraken)*\n"
         f"💵 Цена: ${btc_price:,.2f}\n"
         f"📊 RSI: {btc_rsi:.2f}\n"
         f"📈 EMA 10/20: ${btc_ema10:,.2f} / ${btc_ema20:,.2f}\n\n"
-        f"💎 *GRAM/USD*\n"
+        f"💎 *GRAM/USDT (Bybit)*\n"
         f"💵 Цена: ${gram_price:.4f}\n"
         f"📊 RSI: {gram_rsi:.2f}\n"
         f"📈 EMA 10/20: ${gram_ema10:.4f} / ${gram_ema20:.4f}\n\n"
-        f"🛡 *AZTEC/USD*\n"
+        f"🛡 *AZTEC/USDT (Bybit)*\n"
         f"💵 Цена: ${aztec_price:.4f}\n"
         f"📊 RSI: {aztec_rsi:.2f}\n"
         f"📈 EMA 10/20: ${aztec_ema10:.4f} / ${aztec_ema20:.4f}\n\n"
@@ -141,8 +148,8 @@ def home():
       requests.post(url, json=payload, timeout=5)
 
     return (
-        f"<h1>🤖 Kraken Multi-Crypto Agent</h1><p>✅ Данные собраны с Kraken,"
-        " отчет отправлен в Telegram!</p>"
+        f"<h1>🤖 Multi-Crypto Agent</h1><p>✅ Данные собраны, отчет отправлен"
+        " в Telegram!</p>"
     )
 
   except Exception as e:
