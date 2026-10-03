@@ -1,10 +1,8 @@
 import os
-import threading
 import time
 from flask import Flask
 import pandas as pd
 import requests
-import schedule
 from google import genai
 
 # --- НАСТРОЙКИ ---
@@ -24,33 +22,15 @@ if GEMINI_API_KEY:
 app = Flask(__name__)
 
 
-@app.route("/")
-def home():
-  return "🤖 Crypto AI Agent is running 24/7!"
-
-
 def send_telegram_message(message):
   if not TELEGRAM_TOKEN or not CHAT_ID:
-    print("❌ ОШИБКА: TELEGRAM_TOKEN или CHAT_ID не заданы в переменных Render!")
+    print("❌ ОШИБКА: TELEGRAM_TOKEN or CHAT_ID не заданы!")
     return
-
   url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
   payload = {"chat_id": CHAT_ID, "text": message, "parse_mode": "Markdown"}
-
-  print(
-      f"📤 Пытаемся отправить запрос в Telegram для CHAT_ID: {CHAT_ID}..."
-  )  # Отладка
   try:
     response = requests.post(url, json=payload, timeout=10)
-    print(
-        f"📥 Ответ от Telegram API (Код статуса: {response.status_code}):"
-        f" {response.text}"
-    )
-
-    if response.status_code == 200:
-      print("✅ Уведомление УСПЕШНО доставлено в Telegram!")
-    else:
-      print("⚠️ Telegram отклонил сообщение! Проверьте правильность CHAT_ID.")
+    print(f"📥 Ответ от Telegram API: {response.status_code} - {response.text}")
   except Exception as e:
     print(f"❌ Ошибка соединения с Telegram: {e}")
 
@@ -75,8 +55,8 @@ def get_ai_analysis(price, rsi, ema10, ema20):
     return "ИИ временно недоступен."
 
 
-def job_analyze_btc():
-  print("\n--- Запуск плановой проверки рынка BTC ---")
+def run_crypto_analysis():
+  print("\n--- Запуск проверки рынка BTC по веб-запросу ---")
   try:
     url = (
         "https://api.coingecko.com/api/v3/coins/bitcoin/market_chart?vs_currency=usd&days=30"
@@ -110,29 +90,31 @@ def job_analyze_btc():
     ai_commentary = get_ai_analysis(price, rsi, ema10, ema20)
 
     signal_text = (
-        f"🤖 *ИИ-Агент по BTC/USD (Render)*\n\n💵 Цена: `${price:,.2f}`\n📊 RSI:"
-        f" `{rsi:.2f}`\n\n🧠 *Мнение ИИ:*\n{ai_commentary}"
+        f"🤖 *ИИ-Агент по BTC/USD (Render Web)*\n\n💵 Цена: `${price:,.2f}`\n📊"
+        f" RSI: `{rsi:.2f}`\n📈 EMA 10: `{ema10:,.2f}`\n📉 EMA 20:"
+        f" `{ema20:,.2f}`\n\n🧠 *Мнение ИИ:*\n{ai_commentary}"
     )
 
     send_telegram_message(signal_text)
+    return (
+        f"✅ Успешно! Анализ по BTC выполнен, отчет отправлен в Telegram.<br>Цена:"
+        f" ${price:,.2f}, RSI: {rsi:.2f}"
+    )
   except Exception as e:
-    print(f"❌ Ошибка в расчете рынка: {e}")
+    err_msg = f"❌ Ошибка при анализе рынка: {e}"
+    print(err_msg)
+    return err_msg
 
 
-def run_scheduler():
-  print("⏳ Ожидание 5 секунд до старта первой проверки...")
-  time.sleep(5)
-  job_analyze_btc()
+# Главная страница сайта — при заходе на нее бот сразу делает анализ и шлет отчет!
+@app.route("/")
+def home():
+  result = run_crypto_analysis()
+  return (
+      f"<h1>🤖 Crypto AI Agent</h1><p>{result}</p><hr><p>Бот успешно"
+      " отработал по запросу!</p>"
+  )
 
-  schedule.every(1).hours.do(job_analyze_btc)
-  while True:
-    schedule.run_pending()
-    time.sleep(1)
-
-
-# Запуск фонового потока
-scheduler_thread = threading.Thread(target=run_scheduler, daemon=True)
-scheduler_thread.start()
 
 if __name__ == "__main__":
   port = int(os.environ.get("PORT", 10000))
