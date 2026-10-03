@@ -53,8 +53,8 @@ def home():
             " предложений) на русском языке."
         )
         response = client.models.generate_content(
-            model="gemini-2.5-flash", contents=prompt
-        )
+    model="gemini-2.0-flash", contents=prompt
+)
         ai_commentary = response.text
       except Exception as ai_err:
         ai_commentary = f"ИИ временно недоступен ({str(ai_err)[:30]})."
