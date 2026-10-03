@@ -1,62 +1,25 @@
 import os
-import ccxt
 from flask import Flask
-import pandas as pd
-import requests
-from google import genai
 
-# --- НАСТРОЙКИ ---
-TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
-CHAT_ID = os.getenv("CHAT_ID")
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+print("🚀 Старт приложения...")
 
-print(
-    f"🔧 Проверка ключей на старте: TELEGRAM_TOKEN={'ОК' if TELEGRAM_TOKEN else 'ПУСТО'},"
-    f" CHAT_ID={'ОК' if CHAT_ID else 'ПУСТО'},"
-    f" GEMINI_KEY={'ОК' if GEMINI_KEY else 'ПУСТО'}"
-)
-
+# Инициализируем Flask сразу
 app = Flask(__name__)
-
-
-def send_telegram_message(message):
-  if not TELEGRAM_TOKEN or not CHAT_ID:
-    print("❌ ОШИБКА: TELEGRAM_TOKEN или CHAT_ID пусты!")
-    return
-  url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
-  payload = {"chat_id": CHAT_ID, "text": message, "parse_mode": "Markdown"}
-  try:
-    response = requests.post(url, json=payload, timeout=10)
-    print(f"📥 Ответ от Telegram API: {response.status_code} - {response.text}")
-  except Exception as e:
-    print(f"❌ Ошибка соединения с Telegram: {e}")
-
-
-def get_ai_analysis(price, rsi, ema10, ema20):
-  if not GEMINI_API_KEY:
-    return "ИИ-анализ отключен (нет ключа)."
-  try:
-    client = genai.Client(api_key=GEMINI_API_KEY)
-    prompt = (
-        f"Ты профессиональный криптотрейдер. Данные по BTC/USD:\n- Цена:"
-        f" ${price:,.2f}\n- RSI: {rsi:.2f}\n- EMA 10:${ema10:,.2f}\n- EMA 20:"
-        f" ${ema20:,.2f}\nДай краткий вердикт по рынку (до 4 предложений) на"
-        " русском языке."
-    )
-    # Используем базовый метод генерации
-    response = client.models.generate_content(
-        model="gemini-2.5-flash", contents=prompt
-    )
-    return response.text
-  except Exception as e:
-    print(f"⚠️ Ошибка Gemini ИИ: {e}")
-    return "ИИ временно недоступен."
 
 
 @app.route("/")
 def home():
   print("\n--- Запрос на корневой URL получен ---")
   try:
+    import ccxt
+    import pandas as pd
+    import requests
+    from google import genai
+
+    TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
+    CHAT_ID = os.getenv("CHAT_ID")
+    GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+
     # 1. Сбор данных с Kraken
     exchange = ccxt.kraken()
     bars = exchange.fetch_ohlcv("BTC/USD", timeframe="1h", limit=50)
@@ -79,14 +42,25 @@ def home():
     ema10 = last_row["ema_10"]
     ema20 = last_row["ema_20"]
 
-    print(
-        f"📊 Данные успешно собраны: Цена = ${price:,.2f}, RSI = {rsi:.2f}"
-    )
+    # 2. Получение ответа от ИИ (если ключ есть)
+    ai_commentary = "ИИ-анализ отключен."
+    if GEMINI_API_KEY:
+      try:
+        client = genai.Client(api_key=GEMINI_API_KEY)
+        prompt = (
+            f"Ты профессиональный криптотрейдер. Данные по BTC/USD:\n- Цена:"
+            f" ${price:,.2f}\n- RSI: {rsi:.2f}\n- EMA 10:${ema10:,.2f}\n- EMA"
+            f" 20: ${ema20:,.2f}\nДай краткий вердикт по рынку (до 4"
+            " предложений) на русском языке."
+        )
+        response = client.models.generate_content(
+            model="gemini-2.5-flash", contents=prompt
+        )
+        ai_commentary = response.text
+      except Exception as ai_err:
+        ai_commentary = f"ИИ временно недоступен ({str(ai_err)[:30]})."
 
-    # 2. Получение мнения ИИ
-    ai_commentary = get_ai_analysis(price, rsi, ema10, ema20)
-
-    # 3. Формирование сообщения
+    # 3. Формирование текста
     signal_text = (
         f"🤖 *ИИ-Агент по BTC/USD (Kraken)*\n\n💵 Цена: `${price:,.2f}`\n📊 RSI:"
         f" `{rsi:.2f}`\n📈 EMA 10: `${ema10:,.2f}`\n📉 EMA 20:"
@@ -94,7 +68,11 @@ def home():
     )
 
     # 4. Отправка в Telegram
-    send_telegram_message(signal_text)
+    if TELEGRAM_TOKEN and CHAT_ID:
+      url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
+      payload = {"chat_id": CHAT_ID, "text": signal_text, "parse_mode": "Markdown"}
+      resp = requests.post(url, json=payload, timeout=10)
+      print(f"📥 Ответ от Telegram API: {resp.status_code}")
 
     return (
         f"<h1>🤖 Crypto AI Agent</h1><p>✅ Успешно! Цена: ${price:,.2f}, RSI:"
@@ -102,12 +80,8 @@ def home():
     )
 
   except Exception as e:
-    err_msg = f"❌ Критическая ошибка в обработчике: {e}"
+    err_msg = f"❌ Ошибка в обработчике: {e}"
     print(err_msg)
-    try:
-      send_telegram_message(err_msg)
-    except:
-      pass
     return f"<h1>Ошибка</h1><p>{err_msg}</p>", 500
 
 
