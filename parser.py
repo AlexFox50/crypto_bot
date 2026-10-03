@@ -1,29 +1,29 @@
 import os
-import ccxt
 from flask import Flask
-import pandas as pd
-import requests
-from google import genai
 
-print("🚀 Старт приложения...")
+print("🚀 Старт легкого Flask-сервера...")
 
 app = Flask(__name__)
 
 
 @app.route("/")
 def home():
-  print("\n--- Запрос на корневой URL получен ---")
+  print("\n--- Запрос получен, загружаем модули и данные ---")
   try:
+    # Ленивые импорты (загружаются только при вызове, не вешая старт сервера)
+    import ccxt
+    import pandas as pd
+    import requests
+    from google import genai
+
     TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
     CHAT_ID = os.getenv("CHAT_ID")
     GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 
-    # Единое быстрое подключение к Kraken с жестким таймаутом
-    exchange = ccxt.kraken({"timeout": 3000})
-
-    # --- 1. Сбор данных по BTC (Kraken) ---
+    # Сбор данных по BTC (Kraken)
     btc_price, btc_rsi, btc_ema10, btc_ema20 = 0, 0, 0, 0
     try:
+      exchange = ccxt.kraken({"timeout": 3000})
       bars_btc = exchange.fetch_ohlcv("BTC/USD", timeframe="1h", limit=30)
       df_btc = pd.DataFrame(
           bars_btc,
@@ -42,66 +42,16 @@ def home():
       btc_price, btc_rsi = last_btc["close"], last_btc["rsi"]
       btc_ema10, btc_ema20 = last_btc["ema_10"], last_btc["ema_20"]
     except Exception as e:
-      print(f"⚠️ Ошибка BTC: {e}")
+      print(f"⚠️ Ошибка сбора данных: {e}")
 
-    # --- 2. Сбор данных по GRAM (Kraken) ---
-    gram_price, gram_rsi, gram_ema10, gram_ema20 = 0, 0, 0, 0
-    try:
-      bars_gram = exchange.fetch_ohlcv("GRAM/USD", timeframe="1h", limit=30)
-      df_gram = pd.DataFrame(
-          bars_gram,
-          columns=["timestamp", "open", "high", "low", "close", "volume"],
-      )
-      df_gram["ema_10"] = df_gram["close"].ewm(span=10, adjust=False).mean()
-      df_gram["ema_20"] = df_gram["close"].ewm(span=20, adjust=False).mean()
-      delta_gram = df_gram["close"].diff()
-      gain_gram = (delta_gram.where(delta_gram > 0, 0)).rolling(window=14).mean()
-      loss_gram = (
-          (-delta_gram.where(delta_gram < 0, 0)).rolling(window=14).mean()
-      )
-      rs_gram = gain_gram / loss_gram
-      df_gram["rsi"] = 100 - (100 / (1 + rs_gram))
-      last_gram = df_gram.iloc[-1]
-      gram_price, gram_rsi = last_gram["close"], last_gram["rsi"]
-      gram_ema10, gram_ema20 = last_gram["ema_10"], last_gram["ema_20"]
-    except Exception:
-      pass  индикатор пропускается, если пара недоступна
-
-    # --- 3. Сбор данных по AZTEC (Kraken) ---
-    aztec_price, aztec_rsi, aztec_ema10, aztec_ema20 = 0, 0, 0, 0
-    try:
-      bars_aztec = exchange.fetch_ohlcv("AZTEC/USD", timeframe="1h", limit=30)
-      df_aztec = pd.DataFrame(
-          bars_aztec,
-          columns=["timestamp", "open", "high", "low", "close", "volume"],
-      )
-      df_aztec["ema_10"] = df_aztec["close"].ewm(span=10, adjust=False).mean()
-      df_aztec["ema_20"] = df_aztec["close"].ewm(span=20, adjust=False).mean()
-      delta_aztec = df_aztec["close"].diff()
-      gain_aztec = (delta_aztec.where(delta_aztec > 0, 0)).rolling(
-          window=14
-      ).mean()
-      loss_aztec = (
-          (-delta_aztec.where(delta_aztec < 0, 0)).rolling(window=14).mean()
-      )
-      rs_aztec = gain_aztec / loss_aztec
-      df_aztec["rsi"] = 100 - (100 / (1 + rs_aztec))
-      last_aztec = df_aztec.iloc[-1]
-      aztec_price, aztec_rsi = last_aztec["close"], last_aztec["rsi"]
-      aztec_ema10, aztec_ema20 = last_aztec["ema_10"], last_aztec["ema_20"]
-    except Exception:
-      pass
-
-    # --- 4. Получение аналитики от ИИ ---
+    # Анализ ИИ
     ai_commentary = "ИИ-анализ отключен."
     if GEMINI_API_KEY:
       try:
         client = genai.Client(api_key=GEMINI_API_KEY)
         prompt = (
-            f"Ты профессиональный криптотрейдер. Данные:\n- BTC/USD (Kraken):"
-            f" Цена ${btc_price:,.2f}, RSI {btc_rsi:.2f}\nДай краткий"
-            " аналитический вердикт по рынку (до 3 предложений) на русском"
-            " языке."
+            f"Ты криптотрейдер. BTC/USD: Цена ${btc_price:,.2f}, RSI"
+            f" {btc_rsi:.2f}. Дай краткий вердикт (до 2 предложений) на рус."
         )
         response = client.models.generate_content(
             model="gemini-3.8-flash", contents=prompt
@@ -110,7 +60,7 @@ def home():
       except Exception:
         ai_commentary = "ИИ временно недоступен."
 
-    # --- 5. Формирование отчета ---
+    # Отправка в Telegram
     signal_text = (
         f"🤖 Крипто Агент (Kraken)\n\n"
         f"🪙 *BTC/USD*\n"
@@ -120,23 +70,24 @@ def home():
         f"🧠 Мнение ИИ:\n{ai_commentary}"
     )
 
-    # --- 6. Отправка в Telegram ---
     if TELEGRAM_TOKEN and CHAT_ID:
       url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
-      payload = {"chat_id": CHAT_ID, "text": signal_text}
-      requests.post(url, json=payload, timeout=5)
+      requests.post(
+          url, json={"chat_id": CHAT_ID, "text": signal_text}, timeout=5
+      )
 
     return (
-        f"<h1>🤖 Crypto Agent</h1><p>✅ Успешно! Отчет отправлен в Telegram.</p>"
+        f"<h1>🤖 Crypto Agent</h1><p>✅ Успешно! Цена BTC: ${btc_price:,.2f},"
+        " отчет отправлен в Telegram.</p>"
     )
 
   except Exception as e:
-    err_msg = f"❌ Ошибка: {e}"
+    err_msg = f"❌ Ошибка обработчика: {e}"
     print(err_msg)
     return f"<h1>Ошибка</h1><p>{err_msg}</p>", 500
 
 
 if __name__ == "__main__":
   port = int(os.environ.get("PORT", 10000))
-  print(f"🌐 Запуск Flask-сервера на порту {port}...")
+  print(f"🌐 Запуск веб-сервера на порту {port}...")
   app.run(host="0.0.0.0", port=port)
