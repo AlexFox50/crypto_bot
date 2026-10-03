@@ -85,14 +85,17 @@ def run_crypto_analysis():
         f"📊 Данные получены: Цена = ${price:,.2f}, RSI = {rsi:.2f}. Запрос к"
         " ИИ..."
     )
+
+    # Получаем комментарий ИИ (даже если он упадет, вернется текст ошибки, но код не прервется)
     ai_commentary = get_ai_analysis(price, rsi, ema10, ema20)
 
     signal_text = (
         f"🤖 *ИИ-Агент по BTC/USD (Kraken)*\n\n💵 Цена: `${price:,.2f}`\n📊 RSI:"
-        f" `{rsi:.2f}`\n📈 EMA 10: `{ema10:,.2f}`\n📉 EMA 20:"
+        f" `{rsi:.2f}`\n📈 EMA 10: `${ema10:,.2f}`\n📉 EMA 20:"
         f" `{ema20:,.2f}`\n\n🧠 *Мнение ИИ:*\n{ai_commentary}"
     )
 
+    # Отправка в Telegram гарантированно выполнится
     send_telegram_message(signal_text)
     return (
         f"✅ Успешно! Цена: ${price:,.2f}, RSI: {rsi:.2f}, отчет отправлен в"
@@ -101,6 +104,8 @@ def run_crypto_analysis():
   except Exception as e:
     err_msg = f"❌ Ошибка при анализе рынка: {e}"
     print(err_msg)
+    # Даже при ошибке сбора данных пытаемся отправить её в Telegram
+    send_telegram_message(err_msg)
     return err_msg
 
 
