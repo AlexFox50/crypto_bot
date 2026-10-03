@@ -41,7 +41,7 @@ def home():
     ema10 = last_row["ema_10"]
     ema20 = last_row["ema_20"]
 
-    # 2. Получение ответа от ИИ
+   # 2. Получение ответа от ИИ
     ai_commentary = "ИИ-анализ отключен."
     if GEMINI_API_KEY:
       try:
@@ -62,8 +62,13 @@ def home():
           ai_commentary = (
               "⏳ Превышен лимит запросов к ИИ (подождите 1 минуту)."
           )
+        elif "503" in err_str:
+          ai_commentary = (
+              "🔄 Серверы Google ИИ временно перегружены. Технические данные"
+              " актуальны."
+          )
         else:
-          ai_commentary = f"Ошибка ИИ: {err_str[:40]}"
+          ai_commentary = f"ИИ временно недоступен."
 
     # 3. Формирование текста отчета
     signal_text = (
