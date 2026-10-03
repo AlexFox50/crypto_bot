@@ -40,21 +40,21 @@ def get_ai_analysis(price, rsi, ema10, ema20):
     return "ИИ-анализ отключен (нет ключа)."
 
   try:
-    # Безопасная инициализация клиента внутри функции
     client = genai.Client(api_key=GEMINI_API_KEY)
     prompt = (
         f"Ты профессиональный криптотрейдер. Данные по BTC/USD:\n- Цена:"
-        f" ${price:,.2f}\n- RSI: {rsi:.2f}\n- EMA 10:${ema10:,.2f}\n- EMA 20:"
+        f" ${price:,.2f}\n- RSI: {rsi:.2f}\n- EMA 10: ${ema10:,.2f}\n- EMA 20:"
         f" ${ema20:,.2f}\nДай краткий вердикт по рынку (до 4 предложений) на"
         " русском языке."
     )
+    # Используем корректный идентификатор модели с префиксом
     response = client.models.generate_content(
-        model="gemini-2.5-flash", contents=prompt
+        model="models/gemini-2.5-flash", contents=prompt
     )
     return response.text
   except Exception as e:
-    print(f"⚠️ Ошибка Gemini ИИ: {e}")
-    return f"ИИ временно недоступен (ошибка ключа или лимита)."
+    print(f"⚠️ Подробная ошибка Gemini ИИ: {e}")
+    return f"ИИ временно недоступен (ошибка: {str(e)[:40]})."
 
 
 def run_crypto_analysis():
