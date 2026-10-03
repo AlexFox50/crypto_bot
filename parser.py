@@ -52,14 +52,18 @@ def home():
             f" 20: ${ema20:,.2f}\nДай краткий вердикт по рынку (до 4"
             " предложений) на русском языке."
         )
+        # Используем стандартную модель gemini-2.5-flash
         response = client.models.generate_content(
-    model="gemini-1.5-flash", contents=prompt
-)
+            model="gemini-2.5-flash", contents=prompt
+        )
         ai_commentary = response.text
       except Exception as ai_err:
-        ai_commentary = f"ИИ временно недоступен ({str(ai_err)[:30]})."
+        print(f"⚠️ Ошибка Gemini ИИ: {ai_err}")
+        ai_commentary = (
+            "Анализ временно недоступен (проверьте настройки ключа в Render)."
+        )
 
-    # 3. Формирование текста (без спецсимволов Markdown)
+    # 3. Формирование текста отчета
     signal_text = (
         f"🤖 ИИ-Агент по BTC/USD (Kraken)\n\n"
         f"💵 Цена: ${price:,.2f}\n"
@@ -69,18 +73,15 @@ def home():
         f"🧠 Мнение ИИ:\n{ai_commentary}"
     )
 
-    # 4. Отправка в Telegram как чистый текст (без parse_mode)
+    # 4. Отправка в Telegram
     if TELEGRAM_TOKEN and CHAT_ID:
       url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
       payload = {
           "chat_id": CHAT_ID,
           "text": signal_text,
-      }  # Убрали parse_mode, чтобы Telegram не отклонял текст
+      }
       resp = requests.post(url, json=payload, timeout=10)
-      print(
-          f"📥 Ответ от Telegram API: {resp.status_code} | Текст ответа:"
-          f" {resp.text}"
-      )
+      print(f"📥 Ответ от Telegram API: {resp.status_code}")
 
     return (
         f"<h1>🤖 Crypto AI Agent</h1><p>✅ Успешно! Цена: ${price:,.2f}, RSI:"
