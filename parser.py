@@ -13,7 +13,7 @@ GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 print(
     f"🔧 Проверка ключей на старте: TELEGRAM_TOKEN={'ОК' if TELEGRAM_TOKEN else 'ПУСТО'},"
     f" CHAT_ID={'ОК' if CHAT_ID else 'ПУСТО'},"
-    f" GEMINI_KEY={'ОК' if GEMINI_API_KEY else 'ПУСТО'}"
+    f" GEMINI_KEY={'ОК' if GEMINI_KEY else 'ПУСТО'}"
 )
 
 app = Flask(__name__)
@@ -39,24 +39,25 @@ def get_ai_analysis(price, rsi, ema10, ema20):
     client = genai.Client(api_key=GEMINI_API_KEY)
     prompt = (
         f"Ты профессиональный криптотрейдер. Данные по BTC/USD:\n- Цена:"
-        f" ${price:,.2f}\n- RSI: {rsi:.2f}\n- EMA 10: ${ema10:,.2f}\n- EMA 20:"
+        f" ${price:,.2f}\n- RSI: {rsi:.2f}\n- EMA 10:${ema10:,.2f}\n- EMA 20:"
         f" ${ema20:,.2f}\nДай краткий вердикт по рынку (до 4 предложений) на"
         " русском языке."
     )
-    # Используем стабильный чат-интерфейс, который полностью убирает предупреждения AFC
-    chat = client.chats.create(model="gemini-2.5-flash")
-    response = chat.send_message(prompt)
+    # Используем базовый метод генерации
+    response = client.models.generate_content(
+        model="gemini-2.5-flash", contents=prompt
+    )
     return response.text
   except Exception as e:
     print(f"⚠️ Ошибка Gemini ИИ: {e}")
-    return f"ИИ временно недоступен ({str(e)[:35]})."
+    return "ИИ временно недоступен."
 
 
 @app.route("/")
 def home():
   print("\n--- Запрос на корневой URL получен ---")
   try:
-    # 1. Шаг сбора данных с Kraken (изолирован)
+    # 1. Сбор данных с Kraken
     exchange = ccxt.kraken()
     bars = exchange.fetch_ohlcv("BTC/USD", timeframe="1h", limit=50)
 
@@ -82,17 +83,17 @@ def home():
         f"📊 Данные успешно собраны: Цена = ${price:,.2f}, RSI = {rsi:.2f}"
     )
 
-    # 2. Шаг запроса к ИИ (полностью изолирован, падение ИИ не уронит отправку)
+    # 2. Получение мнения ИИ
     ai_commentary = get_ai_analysis(price, rsi, ema10, ema20)
 
-    # 3. Формируем текст
+    # 3. Формирование сообщения
     signal_text = (
         f"🤖 *ИИ-Агент по BTC/USD (Kraken)*\n\n💵 Цена: `${price:,.2f}`\n📊 RSI:"
         f" `{rsi:.2f}`\n📈 EMA 10: `${ema10:,.2f}`\n📉 EMA 20:"
         f" `{ema20:,.2f}`\n\n🧠 *Мнение ИИ:*\n{ai_commentary}"
     )
 
-    # 4. Отправляем в Telegram
+    # 4. Отправка в Telegram
     send_telegram_message(signal_text)
 
     return (
@@ -103,7 +104,6 @@ def home():
   except Exception as e:
     err_msg = f"❌ Критическая ошибка в обработчике: {e}"
     print(err_msg)
-    # Пытаемся отправить ошибку в Telegram, чтобы знать о ней
     try:
       send_telegram_message(err_msg)
     except:
