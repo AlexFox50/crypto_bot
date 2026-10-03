@@ -52,16 +52,13 @@ def home():
             f" 20: ${ema20:,.2f}\nДай краткий вердикт по рынку (до 4"
             " предложений) на русском языке."
         )
-        # Используем стандартную модель gemini-2.5-flash
         response = client.models.generate_content(
             model="gemini-2.5-flash", contents=prompt
         )
         ai_commentary = response.text
       except Exception as ai_err:
         print(f"⚠️ Ошибка Gemini ИИ: {ai_err}")
-        ai_commentary = (
-            "Анализ временно недоступен (проверьте настройки ключа в Render)."
-        )
+        ai_commentary = f"Ошибка ИИ: {str(ai_err)[:40]}"
 
     # 3. Формирование текста отчета
     signal_text = (
