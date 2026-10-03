@@ -53,7 +53,7 @@ def home():
             " предложений) на русском языке."
         )
         response = client.models.generate_content(
-            model="gemini-2.5-flash", contents=prompt
+            model="gemini-3.8-flash", contents=prompt
         )
         ai_commentary = response.text
       except Exception as ai_err:
