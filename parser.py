@@ -38,7 +38,8 @@ def send_telegram_message(message):
 
 def get_ai_analysis(price, rsi, ema10, ema20):
   if not GEMINI_API_KEY:
-    return "ИИ-анализ отключен."
+    return "ИИ-анализ отключен (нет ключа)."
+
   prompt = f"""
     Ты профессиональный криптотрейдер. Данные по BTC/USD:
     - Цена: ${price:,.2f}
@@ -47,28 +48,29 @@ def get_ai_analysis(price, rsi, ema10, ema20):
     Дай краткий вердикт по рынку (до 4 предложений) на русском языке.
     """
   try:
+    # Используем актуальную и стабильную модель gemini-2.5-flash
     response = ai_client.models.generate_content(
-        model="gemini-3.8-flash", contents=prompt
+        model="gemini-2.5-flash", contents=prompt
     )
     return response.text
   except Exception as e:
-    print(f"Ошибка Gemini ИИ: {e}")
-    return "ИИ временно недоступен."
+    # Выводим в лог точную причину ошибки от Gemini, чтобы мы ее видели
+    print(f"❌ Подробная ошибка от Gemini ИИ: {e}")
+    return (
+        f"Не удалось получить ответ от ИИ (ошибка: {str(e)[:50]}...)."
+        " Технические индикаторы рассчитаны успешно."
+    )
 
 
 def run_crypto_analysis():
-  print("\n--- Запуск проверки рынка BTC через CCXT (Kraken) ---")
+  print("\n--- Запуск проверки рынка BTC через Kraken ---")
   try:
-    # Используем биржу Kraken, у которой нет ограничений 451 для облачных серверов
     exchange = ccxt.kraken()
     bars = exchange.fetch_ohlcv("BTC/USD", timeframe="1h", limit=50)
 
-    # Превращаем данные в DataFrame
     df = pd.DataFrame(
         bars, columns=["timestamp", "open", "high", "low", "close", "volume"]
     )
-
-    # Рассчитываем индикаторы
     df["ema_10"] = df["close"].ewm(span=10, adjust=False).mean()
     df["ema_20"] = df["close"].ewm(span=20, adjust=False).mean()
 
@@ -85,8 +87,8 @@ def run_crypto_analysis():
     ema20 = last_row["ema_20"]
 
     print(
-        f"📊 Kraken Данные получены: Цена = ${price:,.2f}, RSI = {rsi:.2f}. Запрос"
-        " к ИИ..."
+        f"📊 Данные получены: Цена = ${price:,.2f}, RSI = {rsi:.2f}. Запрос к"
+        " Gemini..."
     )
     ai_commentary = get_ai_analysis(price, rsi, ema10, ema20)
 
@@ -98,11 +100,11 @@ def run_crypto_analysis():
 
     send_telegram_message(signal_text)
     return (
-        f"✅ Успешно через Kraken! Цена: ${price:,.2f}, RSI: {rsi:.2f},"
-        " отправлено в Telegram."
+        f"✅ Успешно! Цена: ${price:,.2f}, RSI: {rsi:.2f}, отчет отправлен в"
+        " Telegram."
     )
   except Exception as e:
-    err_msg = f"❌ Ошибка CCXT при анализе рынка: {e}"
+    err_msg = f"❌ Ошибка при анализе рынка: {e}"
     print(err_msg)
     return err_msg
 
@@ -111,8 +113,8 @@ def run_crypto_analysis():
 def home():
   result = run_crypto_analysis()
   return (
-      f"<h1>🤖 Crypto AI Agent</h1><p>{result}</p><hr><p>Kraken подключение"
-      " активно!</p>"
+      f"<h1>🤖 Crypto AI Agent</h1><p>{result}</p><hr><p>Система работает"
+      " стабильно!</p>"
   )
 
 
