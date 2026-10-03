@@ -3,7 +3,6 @@ from flask import Flask
 
 print("🚀 Старт приложения...")
 
-# Инициализируем Flask сразу
 app = Flask(__name__)
 
 
@@ -42,14 +41,14 @@ def home():
     ema10 = last_row["ema_10"]
     ema20 = last_row["ema_20"]
 
-    # 2. Получение ответа от ИИ (если ключ есть)
+    # 2. Получение ответа от ИИ
     ai_commentary = "ИИ-анализ отключен."
     if GEMINI_API_KEY:
       try:
         client = genai.Client(api_key=GEMINI_API_KEY)
         prompt = (
             f"Ты профессиональный криптотрейдер. Данные по BTC/USD:\n- Цена:"
-            f" ${price:,.2f}\n- RSI: {rsi:.2f}\n- EMA 10:${ema10:,.2f}\n- EMA"
+            f" ${price:,.2f}\n- RSI: {rsi:.2f}\n- EMA 10: ${ema10:,.2f}\n- EMA"
             f" 20: ${ema20:,.2f}\nДай краткий вердикт по рынку (до 4"
             " предложений) на русском языке."
         )
@@ -60,19 +59,28 @@ def home():
       except Exception as ai_err:
         ai_commentary = f"ИИ временно недоступен ({str(ai_err)[:30]})."
 
-    # 3. Формирование текста
+    # 3. Формирование текста (без спецсимволов Markdown)
     signal_text = (
-        f"🤖 *ИИ-Агент по BTC/USD (Kraken)*\n\n💵 Цена: `${price:,.2f}`\n📊 RSI:"
-        f" `{rsi:.2f}`\n📈 EMA 10: `${ema10:,.2f}`\n📉 EMA 20:"
-        f" `{ema20:,.2f}`\n\n🧠 *Мнение ИИ:*\n{ai_commentary}"
+        f"🤖 ИИ-Агент по BTC/USD (Kraken)\n\n"
+        f"💵 Цена: ${price:,.2f}\n"
+        f"📊 RSI: {rsi:.2f}\n"
+        f"📈 EMA 10: ${ema10:,.2f}\n"
+        f"📉 EMA 20: ${ema20:,.2f}\n\n"
+        f"🧠 Мнение ИИ:\n{ai_commentary}"
     )
 
-    # 4. Отправка в Telegram
+    # 4. Отправка в Telegram как чистый текст (без parse_mode)
     if TELEGRAM_TOKEN and CHAT_ID:
       url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
-      payload = {"chat_id": CHAT_ID, "text": signal_text, "parse_mode": "Markdown"}
+      payload = {
+          "chat_id": CHAT_ID,
+          "text": signal_text,
+      }  # Убрали parse_mode, чтобы Telegram не отклонял текст
       resp = requests.post(url, json=payload, timeout=10)
-      print(f"📥 Ответ от Telegram API: {resp.status_code}")
+      print(
+          f"📥 Ответ от Telegram API: {resp.status_code} | Текст ответа:"
+          f" {resp.text}"
+      )
 
     return (
         f"<h1>🤖 Crypto AI Agent</h1><p>✅ Успешно! Цена: ${price:,.2f}, RSI:"
