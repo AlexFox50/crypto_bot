@@ -12,9 +12,17 @@ TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 CHAT_ID = os.getenv("CHAT_ID")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 
-ai_client = genai.Client(api_key=GEMINI_API_KEY)
+print(
+    f"🔧 Проверка ключей при старте: TELEGRAM_TOKEN={'УСТАНОВЛЕН' if TELEGRAM_TOKEN else 'ПУСТО!'},"
+    f" CHAT_ID={'УСТАНОВЛЕН' if CHAT_ID else 'ПУСТО!'}"
+)
 
-# 1. Сразу создаем Flask-приложение
+if GEMINI_API_KEY:
+  ai_client = genai.Client(api_key=GEMINI_API_KEY)
+else:
+  print("⚠ ВНИМАНИЕ: GEMINI_API_KEY не задан!")
+
+# 1. Создаем Flask-приложение
 app = Flask(__name__)
 
 
@@ -24,17 +32,25 @@ def home():
 
 
 def send_telegram_message(message):
+  if not TELEGRAM_TOKEN or not CHAT_ID:
+    print("❌ Невозможно отправить в Telegram: токен или chat_id не заданы!")
+    return
   url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
   payload = {"chat_id": CHAT_ID, "text": message, "parse_mode": "Markdown"}
   try:
     response = requests.post(url, json=payload, timeout=5)
     if response.status_code == 200:
       print("📤 Уведомление успешно отправлено в Telegram!")
+    else:
+      print(f"⚠ Ошибка отправки в Telegram: {response.text}")
   except Exception as e:
     print(f"Ошибка Telegram: {e}")
 
 
 def get_ai_analysis(price, rsi, ema10, ema20):
+  if not GEMINI_API_KEY:
+    return "ИИ-анализ отключен (не задан GEMINI_API_KEY)."
+
   prompt = f"""
     Ты профессиональный криптотрейдер и аналитик рынка. 
     Вот текущие технические данные по Биткоину (BTC/USD):
@@ -49,10 +65,11 @@ def get_ai_analysis(price, rsi, ema10, ema20):
   for attempt in range(3):
     try:
       response = ai_client.models.generate_content(
-          model='gemini-3.8-flash', contents=prompt
+          model="gemini-3.8-flash", contents=prompt
       )
       return response.text
     except Exception as e:
+      print(f"Попытка запроса к ИИ {attempt + 1} не удалась: {e}")
       if attempt < 2:
         time.sleep(2)
       else:
@@ -90,6 +107,8 @@ def job_analyze_btc():
     ema10 = last_row["ema_10"]
     ema20 = last_row["ema_20"]
 
+    print(f"Успешно собрали данные: Цена BTC = ${price:,.2f}, RSI = {rsi:.2f}")
+
     ai_commentary = get_ai_analysis(price, rsi, ema10, ema20)
 
     signal_text = (
@@ -100,17 +119,16 @@ def job_analyze_btc():
 
     send_telegram_message(signal_text)
   except Exception as e:
-    print(f"Ошибка при анализе рынка: {e}")
+    print(f"❌ Ошибка при анализе рынка: {e}")
 
 
 def run_scheduler():
-  # Небольшая пауза при старте, чтобы веб-сервер успел на 100% занять порт
+  print("⏳ Фоновый поток ожидает старта (пауза 5 сек)...")
   time.sleep(5)
+  print("🚀 Фоновый поток начинает первую проверку...")
 
-  # Первый запуск проверки
   job_analyze_btc()
 
-  # Расписание на каждый час
   schedule.every(1).hours.do(job_analyze_btc)
   while True:
     schedule.run_pending()
@@ -118,10 +136,12 @@ def run_scheduler():
 
 
 if __name__ == "__main__":
+  print("🤖 Запуск главного скрипта...")
   # Запускаем агента в фоновом потоке
   t = threading.Thread(target=run_scheduler, daemon=True)
   t.start()
 
-  # МГНОВЕННО запускаем веб-сервер Flask, чтобы Render сразу увидел открытый порт
+  # Запуск Flask-сервера
   port = int(os.environ.get("PORT", 10000))
+  print(f"🌐 Запуск Flask-сервера на порту {port}...")
   app.run(host="0.0.0.0", port=port)
