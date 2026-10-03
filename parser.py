@@ -22,7 +22,6 @@ if GEMINI_API_KEY:
 else:
   print("⚠ ВНИМАНИЕ: GEMINI_API_KEY не задан!")
 
-# 1. Создаем Flask-приложение
 app = Flask(__name__)
 
 
@@ -123,10 +122,8 @@ def job_analyze_btc():
 
 
 def run_scheduler():
-  print("⏳ Фоновый поток ожидает старта (пауза 5 сек)...")
+  print("⏳ Фоновый поток запущен, ждем 5 секунд до первой проверки...")
   time.sleep(5)
-  print("🚀 Фоновый поток начинает первую проверку...")
-
   job_analyze_btc()
 
   schedule.every(1).hours.do(job_analyze_btc)
@@ -135,13 +132,12 @@ def run_scheduler():
     time.sleep(1)
 
 
-if __name__ == "__main__":
-  print("🤖 Запуск главного скрипта...")
-  # Запускаем агента в фоновом потоке
-  t = threading.Thread(target=run_scheduler, daemon=True)
-  t.start()
+# Запускаем фоновый поток гарантированно при старте файла модуля
+scheduler_thread = threading.Thread(target=run_scheduler, daemon=True)
+scheduler_thread.start()
+print("🚀 Поток шедулера инициализирован.")
 
-  # Запуск Flask-сервера
+if __name__ == "__main__":
   port = int(os.environ.get("PORT", 10000))
   print(f"🌐 Запуск Flask-сервера на порту {port}...")
   app.run(host="0.0.0.0", port=port)
