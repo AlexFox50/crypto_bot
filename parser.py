@@ -44,22 +44,23 @@ def get_ai_analysis(price, rsi, ema10, ema20):
     Ты профессиональный криптотрейдер. Данные по BTC/USD:
     - Цена: ${price:,.2f}
     - RSI: {rsi:.2f}
-    - EMA 10: ${ema10:,.2f}     - EMA 20:${ema20:,.2f}
+    - EMA 10: ${ema10:,.2f}
+    - EMA 20: ${ema20:,.2f}
     Дай краткий вердикт по рынку (до 4 предложений) на русском языке.
     """
   try:
-    # Используем актуальную и стабильную модель gemini-2.5-flash
     response = ai_client.models.generate_content(
         model="gemini-2.5-flash", contents=prompt
     )
     return response.text
   except Exception as e:
-    # Выводим в лог точную причину ошибки от Gemini, чтобы мы ее видели
-    print(f"❌ Подробная ошибка от Gemini ИИ: {e}")
-    return (
-        f"Не удалось получить ответ от ИИ (ошибка: {str(e)[:50]}...)."
-        " Технические индикаторы рассчитаны успешно."
-    )
+    # Если ключ недействителен, возвращаем понятную подсказку вместо технического сбоя 401
+    if "401" in str(e):
+      return (
+          "⚠️ Ошибка авторизации Gemini API (проверьте правильность"
+          " GEMINI_API_KEY на Render)."
+      )
+    return f"ИИ временно недоступен ({str(e)[:30]})."
 
 
 def run_crypto_analysis():
