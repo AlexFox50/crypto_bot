@@ -2,6 +2,7 @@ import os
 import ccxt
 from flask import Flask
 import pandas as pd
+import requests
 from google import genai
 
 # --- НАСТРОЙКИ ---
@@ -20,12 +21,8 @@ app = Flask(__name__)
 
 def send_telegram_message(message):
   if not TELEGRAM_TOKEN or not CHAT_ID:
-    print(
-        "❌ ОШИБКА: TELEGRAM_TOKEN или CHAT_ID пусты в переменных Render!"
-    )
+    print("❌ ОШИБКА: TELEGRAM_TOKEN или CHAT_ID пусты!")
     return
-  import requests
-
   url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
   payload = {"chat_id": CHAT_ID, "text": message, "parse_mode": "Markdown"}
   try:
@@ -38,28 +35,28 @@ def send_telegram_message(message):
 def get_ai_analysis(price, rsi, ema10, ema20):
   if not GEMINI_API_KEY:
     return "ИИ-анализ отключен (нет ключа)."
-
   try:
     client = genai.Client(api_key=GEMINI_API_KEY)
     prompt = (
         f"Ты профессиональный криптотрейдер. Данные по BTC/USD:\n- Цена:"
-        f" ${price:,.2f}\n- RSI: {rsi:.2f}\n- EMA 10: ${ema10:,.2f}\n- EMA 20:"
+        f" ${price:,.2f}\n- RSI: {rsi:.2f}\n- EMA 10:${ema10:,.2f}\n- EMA 20:"
         f" ${ema20:,.2f}\nДай краткий вердикт по рынку (до 4 предложений) на"
         " русском языке."
     )
-    # Используем корректный идентификатор модели с префиксом
     response = client.models.generate_content(
         model="models/gemini-2.5-flash", contents=prompt
     )
     return response.text
   except Exception as e:
-    print(f"⚠️ Подробная ошибка Gemini ИИ: {e}")
-    return f"ИИ временно недоступен (ошибка: {str(e)[:40]})."
+    print(f"⚠️ Ошибка Gemini ИИ: {e}")
+    return "ИИ временно недоступен."
 
 
-def run_crypto_analysis():
-  print("\n--- Запуск проверки рынка BTC через Kraken ---")
+@app.route("/")
+def home():
+  print("\n--- Запрос на корневой URL получен ---")
   try:
+    # 1. Шаг сбора данных с Kraken (изолирован)
     exchange = ccxt.kraken()
     bars = exchange.fetch_ohlcv("BTC/USD", timeframe="1h", limit=50)
 
@@ -82,40 +79,36 @@ def run_crypto_analysis():
     ema20 = last_row["ema_20"]
 
     print(
-        f"📊 Данные получены: Цена = ${price:,.2f}, RSI = {rsi:.2f}. Запрос к"
-        " ИИ..."
+        f"📊 Данные успешно собраны: Цена = ${price:,.2f}, RSI = {rsi:.2f}"
     )
 
-    # Получаем комментарий ИИ (даже если он упадет, вернется текст ошибки, но код не прервется)
+    # 2. Шаг запроса к ИИ (полностью изолирован, падение ИИ не уронит отправку)
     ai_commentary = get_ai_analysis(price, rsi, ema10, ema20)
 
+    # 3. Формируем текст
     signal_text = (
         f"🤖 *ИИ-Агент по BTC/USD (Kraken)*\n\n💵 Цена: `${price:,.2f}`\n📊 RSI:"
         f" `{rsi:.2f}`\n📈 EMA 10: `${ema10:,.2f}`\n📉 EMA 20:"
         f" `{ema20:,.2f}`\n\n🧠 *Мнение ИИ:*\n{ai_commentary}"
     )
 
-    # Отправка в Telegram гарантированно выполнится
+    # 4. Отправляем в Telegram
     send_telegram_message(signal_text)
+
     return (
-        f"✅ Успешно! Цена: ${price:,.2f}, RSI: {rsi:.2f}, отчет отправлен в"
-        " Telegram."
+        f"<h1>🤖 Crypto AI Agent</h1><p>✅ Успешно! Цена: ${price:,.2f}, RSI:"
+        f" {rsi:.2f}, отчет отправлен в Telegram.</p>"
     )
+
   except Exception as e:
-    err_msg = f"❌ Ошибка при анализе рынка: {e}"
+    err_msg = f"❌ Критическая ошибка в обработчике: {e}"
     print(err_msg)
-    # Даже при ошибке сбора данных пытаемся отправить её в Telegram
-    send_telegram_message(err_msg)
-    return err_msg
-
-
-@app.route("/")
-def home():
-  result = run_crypto_analysis()
-  return (
-      f"<h1>🤖 Crypto AI Agent</h1><p>{result}</p><hr><p>Система работает"
-      " стабильно!</p>"
-  )
+    # Пытаемся отправить ошибку в Telegram, чтобы знать о ней
+    try:
+      send_telegram_message(err_msg)
+    except:
+      pass
+    return f"<h1>Ошибка</h1><p>{err_msg}</p>", 500
 
 
 if __name__ == "__main__":
