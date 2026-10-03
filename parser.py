@@ -1,8 +1,7 @@
 import os
-import time
+import ccxt
 from flask import Flask
 import pandas as pd
-import requests
 from google import genai
 
 # --- НАСТРОЙКИ ---
@@ -26,6 +25,8 @@ def send_telegram_message(message):
   if not TELEGRAM_TOKEN or not CHAT_ID:
     print("❌ ОШИБКА: TELEGRAM_TOKEN or CHAT_ID не заданы!")
     return
+  import requests
+
   url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
   payload = {"chat_id": CHAT_ID, "text": message, "parse_mode": "Markdown"}
   try:
@@ -56,63 +57,62 @@ def get_ai_analysis(price, rsi, ema10, ema20):
 
 
 def run_crypto_analysis():
-  print("\n--- Запуск проверки рынка BTC по веб-запросу ---")
+  print("\n--- Запуск проверки рынка BTC через CCXT (Binance) ---")
   try:
-    url = (
-        "https://api.coingecko.com/api/v3/coins/bitcoin/market_chart?vs_currency=usd&days=30"
+    # Подключаемся к Binance через CCXT для получения свечей BTC/USDT
+    exchange = ccxt.binance()
+    bars = exchange.fetch_ohlcv('BTC/USDT', timeframe='1h', limit=50)
+
+    # Превращаем данные в DataFrame
+    df = pd.DataFrame(
+        bars, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume']
     )
-    response = requests.get(url, timeout=10)
-    data = response.json()
 
-    prices = data["prices"]
-    df = pd.DataFrame(prices, columns=["timestamp", "close"])
-    df["timestamp"] = pd.to_datetime(df["timestamp"], unit="ms")
+    # Рассчитываем индикаторы
+    df['ema_10'] = df['close'].ewm(span=10, adjust=False).mean()
+    df['ema_20'] = df['close'].ewm(span=20, adjust=False).mean()
 
-    df["ema_10"] = df["close"].ewm(span=10, adjust=False).mean()
-    df["ema_20"] = df["close"].ewm(span=20, adjust=False).mean()
-
-    delta = df["close"].diff()
+    delta = df['close'].diff()
     gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
     loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
     rs = gain / loss
-    df["rsi"] = 100 - (100 / (1 + rs))
+    df['rsi'] = 100 - (100 / (1 + rs))
 
     last_row = df.iloc[-1]
-    price = last_row["close"]
-    rsi = last_row["rsi"]
-    ema10 = last_row["ema_10"]
-    ema20 = last_row["ema_20"]
+    price = last_row['close']
+    rsi = last_row['rsi']
+    ema10 = last_row['ema_10']
+    ema20 = last_row['ema_20']
 
     print(
-        f"📊 Данные получены: Цена = ${price:,.2f}, RSI = {rsi:.2f}. Запрос к"
-        " ИИ..."
+        f"📊 CCXT Данные получены: Цена = ${price:,.2f}, RSI = {rsi:.2f}. Запрос"
+        " к ИИ..."
     )
     ai_commentary = get_ai_analysis(price, rsi, ema10, ema20)
 
     signal_text = (
-        f"🤖 *ИИ-Агент по BTC/USD (Render Web)*\n\n💵 Цена: `${price:,.2f}`\n📊"
-        f" RSI: `{rsi:.2f}`\n📈 EMA 10: `{ema10:,.2f}`\n📉 EMA 20:"
+        f"🤖 *ИИ-Агент по BTC/USDT (CCXT)*\n\n💵 Цена: `${price:,.2f}`\n📊 RSI:"
+        f" `{rsi:.2f}`\n📈 EMA 10: `{ema10:,.2f}`\n📉 EMA 20:"
         f" `{ema20:,.2f}`\n\n🧠 *Мнение ИИ:*\n{ai_commentary}"
     )
 
     send_telegram_message(signal_text)
     return (
-        f"✅ Успешно! Анализ по BTC выполнен, отчет отправлен в Telegram.<br>Цена:"
-        f" ${price:,.2f}, RSI: {rsi:.2f}"
+        f"✅ Успешно через CCXT! Цена: ${price:,.2f}, RSI: {rsi:.2f},"
+        " отправлено в Telegram."
     )
   except Exception as e:
-    err_msg = f"❌ Ошибка при анализе рынка: {e}"
+    err_msg = f"❌ Ошибка CCXT при анализе рынка: {e}"
     print(err_msg)
     return err_msg
 
 
-# Главная страница сайта — при заходе на нее бот сразу делает анализ и шлет отчет!
 @app.route("/")
 def home():
   result = run_crypto_analysis()
   return (
-      f"<h1>🤖 Crypto AI Agent</h1><p>{result}</p><hr><p>Бот успешно"
-      " отработал по запросу!</p>"
+      f"<h1>🤖 Crypto AI Agent</h1><p>{result}</p><hr><p>CCXT подключение"
+      " активно!</p>"
   )
 
 
