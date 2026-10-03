@@ -39,17 +39,17 @@ def get_ai_analysis(price, rsi, ema10, ema20):
     client = genai.Client(api_key=GEMINI_API_KEY)
     prompt = (
         f"Ты профессиональный криптотрейдер. Данные по BTC/USD:\n- Цена:"
-        f" ${price:,.2f}\n- RSI: {rsi:.2f}\n- EMA 10:${ema10:,.2f}\n- EMA 20:"
+        f" ${price:,.2f}\n- RSI: {rsi:.2f}\n- EMA 10: ${ema10:,.2f}\n- EMA 20:"
         f" ${ema20:,.2f}\nДай краткий вердикт по рынку (до 4 предложений) на"
         " русском языке."
     )
-    response = client.models.generate_content(
-        model="models/gemini-2.5-flash", contents=prompt
-    )
+    # Используем стабильный чат-интерфейс, который полностью убирает предупреждения AFC
+    chat = client.chats.create(model="gemini-2.5-flash")
+    response = chat.send_message(prompt)
     return response.text
   except Exception as e:
     print(f"⚠️ Ошибка Gemini ИИ: {e}")
-    return "ИИ временно недоступен."
+    return f"ИИ временно недоступен ({str(e)[:35]})."
 
 
 @app.route("/")
