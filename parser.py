@@ -19,9 +19,9 @@ def home():
     CHAT_ID = os.getenv("CHAT_ID")
     GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 
-    # --- 1. Сбор данных по BTC (Kraken) ---
-    exchange_btc = ccxt.kraken()
-    bars_btc = exchange_btc.fetch_ohlcv("BTC/USD", timeframe="1h", limit=50)
+    # --- 1. Сбор данных по BTC (Kraken) с таймаутом ---
+    exchange_btc = ccxt.kraken({"timeout": 5000})
+    bars_btc = exchange_btc.fetch_ohlcv("BTC/USD", timeframe="1h", limit=30)
 
     df_btc = pd.DataFrame(
         bars_btc,
@@ -41,51 +41,57 @@ def home():
     btc_ema10, btc_ema20 = last_btc["ema_10"], last_btc["ema_20"]
 
     # --- 2. Сбор данных по GRAM (Gate.io) ---
-    exchange_gram = ccxt.gate()
-    bars_gram = exchange_gram.fetch_ohlcv("GRAM/USDT", timeframe="1h", limit=50)
-
-    df_gram = pd.DataFrame(
-        bars_gram,
-        columns=["timestamp", "open", "high", "low", "close", "volume"],
-    )
-    df_gram["ema_10"] = df_gram["close"].ewm(span=10, adjust=False).mean()
-    df_gram["ema_20"] = df_gram["close"].ewm(span=20, adjust=False).mean()
-
-    delta_gram = df_gram["close"].diff()
-    gain_gram = (delta_gram.where(delta_gram > 0, 0)).rolling(window=14).mean()
-    loss_gram = (-delta_gram.where(delta_gram < 0, 0)).rolling(window=14).mean()
-    rs_gram = gain_gram / loss_gram
-    df_gram["rsi"] = 100 - (100 / (1 + rs_gram))
-
-    last_gram = df_gram.iloc[-1]
-    gram_price, gram_rsi = last_gram["close"], last_gram["rsi"]
-    gram_ema10, gram_ema20 = last_gram["ema_10"], last_gram["ema_20"]
+    gram_price, gram_rsi, gram_ema10, gram_ema20 = 0, 0, 0, 0
+    try:
+      exchange_gate = ccxt.gate({"timeout": 5000})
+      bars_gram = exchange_gate.fetch_ohlcv(
+          "GRAM/USDT", timeframe="1h", limit=30
+      )
+      df_gram = pd.DataFrame(
+          bars_gram,
+          columns=["timestamp", "open", "high", "low", "close", "volume"],
+      )
+      df_gram["ema_10"] = df_gram["close"].ewm(span=10, adjust=False).mean()
+      df_gram["ema_20"] = df_gram["close"].ewm(span=20, adjust=False).mean()
+      delta_gram = df_gram["close"].diff()
+      gain_gram = (delta_gram.where(delta_gram > 0, 0)).rolling(window=14).mean()
+      loss_gram = (
+          (-delta_gram.where(delta_gram < 0, 0)).rolling(window=14).mean()
+      )
+      rs_gram = gain_gram / loss_gram
+      df_gram["rsi"] = 100 - (100 / (1 + rs_gram))
+      last_gram = df_gram.iloc[-1]
+      gram_price, gram_rsi = last_gram["close"], last_gram["rsi"]
+      gram_ema10, gram_ema20 = last_gram["ema_10"], last_gram["ema_20"]
+    except Exception as e:
+      print(f"⚠️ Ошибка загрузки GRAM: {e}")
 
     # --- 3. Сбор данных по AZTEC (Gate.io) ---
-    bars_aztec = exchange_gram.fetch_ohlcv(
-        "AZTEC/USDT", timeframe="1h", limit=50
-    )
-
-    df_aztec = pd.DataFrame(
-        bars_aztec,
-        columns=["timestamp", "open", "high", "low", "close", "volume"],
-    )
-    df_aztec["ema_10"] = df_aztec["close"].ewm(span=10, adjust=False).mean()
-    df_aztec["ema_20"] = df_aztec["close"].ewm(span=20, adjust=False).mean()
-
-    delta_aztec = df_aztec["close"].diff()
-    gain_aztec = (delta_aztec.where(delta_aztec > 0, 0)).rolling(
-        window=14
-    ).mean()
-    loss_aztec = (-delta_aztec.where(delta_aztec < 0, 0)).rolling(
-        window=14
-    ).mean()
-    rs_aztec = gain_aztec / loss_aztec
-    df_aztec["rsi"] = 100 - (100 / (1 + rs_aztec))
-
-    last_aztec = df_aztec.iloc[-1]
-    aztec_price, aztec_rsi = last_aztec["close"], last_aztec["rsi"]
-    aztec_ema10, aztec_ema20 = last_aztec["ema_10"], last_aztec["ema_20"]
+    aztec_price, aztec_rsi, aztec_ema10, aztec_ema20 = 0, 0, 0, 0
+    try:
+      bars_aztec = exchange_gate.fetch_ohlcv(
+          "AZTEC/USDT", timeframe="1h", limit=30
+      )
+      df_aztec = pd.DataFrame(
+          bars_aztec,
+          columns=["timestamp", "open", "high", "low", "close", "volume"],
+      )
+      df_aztec["ema_10"] = df_aztec["close"].ewm(span=10, adjust=False).mean()
+      df_aztec["ema_20"] = df_aztec["close"].ewm(span=20, adjust=False).mean()
+      delta_aztec = df_aztec["close"].diff()
+      gain_aztec = (delta_aztec.where(delta_aztec > 0, 0)).rolling(
+          window=14
+      ).mean()
+      loss_aztec = (
+          (-delta_aztec.where(delta_aztec < 0, 0)).rolling(window=14).mean()
+      )
+      rs_aztec = gain_aztec / loss_aztec
+      df_aztec["rsi"] = 100 - (100 / (1 + rs_aztec))
+      last_aztec = df_aztec.iloc[-1]
+      aztec_price, aztec_rsi = last_aztec["close"], last_aztec["rsi"]
+      aztec_ema10, aztec_ema20 = last_aztec["ema_10"], last_aztec["ema_20"]
+    except Exception as e:
+      print(f"⚠️ Ошибка загрузки AZTEC: {e}")
 
     # --- 4. Получение аналитики от ИИ ---
     ai_commentary = "ИИ-анализ временно недоступен."
@@ -97,15 +103,15 @@ def home():
             f"1. BTC/USD: Цена ${btc_price:,.2f}, RSI {btc_rsi:.2f}\n"
             f"2. GRAM/USDT: Цена ${gram_price:.4f}, RSI {gram_rsi:.2f}\n"
             f"3. AZTEC/USDT: Цена ${aztec_price:.4f}, RSI {aztec_rsi:.2f}\n"
-            "Дай краткий аналитический вердикт по всем трем активам (до 6"
-            " предложений) на русском языке."
+            "Дай краткий аналитический вердикт по активам (до 5 предложений) на"
+            " русском языке."
         )
         response = client.models.generate_content(
             model="gemini-3.8-flash", contents=prompt
         )
         ai_commentary = response.text
       except Exception as ai_err:
-        ai_commentary = f"ИИ пропущен (ошибка лимита/сети)."
+        ai_commentary = f"ИИ пропущен (лимит/ошибка)."
 
     # --- 5. Формирование отчета ---
     signal_text = (
@@ -133,9 +139,8 @@ def home():
       print(f"📥 Telegram API status: {resp.status_code}")
 
     return (
-        f"<h1>🤖 Multi-Crypto Agent</h1><p>✅ BTC: ${btc_price:,.2f} | GRAM:"
-        f" ${gram_price:.4f} | AZTEC: ${aztec_price:.4f} — Отправлено в"
-        " Telegram!</p>"
+        f"<h1>🤖 Multi-Crypto Agent</h1><p>✅ Данные успешно собраны и"
+        " отправлены в Telegram!</p>"
     )
 
   except Exception as e:
