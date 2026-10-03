@@ -57,8 +57,13 @@ def home():
         )
         ai_commentary = response.text
       except Exception as ai_err:
-        print(f"⚠️ Ошибка Gemini ИИ: {ai_err}")
-        ai_commentary = f"Ошибка ИИ: {str(ai_err)[:40]}"
+        err_str = str(ai_err)
+        if "429" in err_str:
+          ai_commentary = (
+              "⏳ Превышен лимит запросов к ИИ (подождите 1 минуту)."
+          )
+        else:
+          ai_commentary = f"Ошибка ИИ: {err_str[:40]}"
 
     # 3. Формирование текста отчета
     signal_text = (
