@@ -1,5 +1,9 @@
 import os
+import ccxt
 from flask import Flask
+import pandas as pd
+import requests
+from google import genai
 
 print("🚀 Старт приложения...")
 
@@ -10,40 +14,38 @@ app = Flask(__name__)
 def home():
   print("\n--- Запрос на корневой URL получен ---")
   try:
-    import ccxt
-    import pandas as pd
-    import requests
-    from google import genai
-
     TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
     CHAT_ID = os.getenv("CHAT_ID")
     GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 
-    # --- 1. Сбор данных по BTC (Kraken) с таймаутом ---
-    exchange_btc = ccxt.kraken({"timeout": 5000})
-    bars_btc = exchange_btc.fetch_ohlcv("BTC/USD", timeframe="1h", limit=30)
+    # --- 1. Сбор данных по BTC (Kraken) ---
+    try:
+      exchange_btc = ccxt.kraken({"timeout": 4000})
+      bars_btc = exchange_btc.fetch_ohlcv("BTC/USD", timeframe="1h", limit=30)
+      df_btc = pd.DataFrame(
+          bars_btc,
+          columns=["timestamp", "open", "high", "low", "close", "volume"],
+      )
+      df_btc["ema_10"] = df_btc["close"].ewm(span=10, adjust=False).mean()
+      df_btc["ema_20"] = df_btc["close"].ewm(span=20, adjust=False).mean()
 
-    df_btc = pd.DataFrame(
-        bars_btc,
-        columns=["timestamp", "open", "high", "low", "close", "volume"],
-    )
-    df_btc["ema_10"] = df_btc["close"].ewm(span=10, adjust=False).mean()
-    df_btc["ema_20"] = df_btc["close"].ewm(span=20, adjust=False).mean()
+      delta_btc = df_btc["close"].diff()
+      gain_btc = (delta_btc.where(delta_btc > 0, 0)).rolling(window=14).mean()
+      loss_btc = (-delta_btc.where(delta_btc < 0, 0)).rolling(window=14).mean()
+      rs_btc = gain_btc / loss_btc
+      df_btc["rsi"] = 100 - (100 / (1 + rs_btc))
 
-    delta_btc = df_btc["close"].diff()
-    gain_btc = (delta_btc.where(delta_btc > 0, 0)).rolling(window=14).mean()
-    loss_btc = (-delta_btc.where(delta_btc < 0, 0)).rolling(window=14).mean()
-    rs_btc = gain_btc / loss_btc
-    df_btc["rsi"] = 100 - (100 / (1 + rs_btc))
-
-    last_btc = df_btc.iloc[-1]
-    btc_price, btc_rsi = last_btc["close"], last_btc["rsi"]
-    btc_ema10, btc_ema20 = last_btc["ema_10"], last_btc["ema_20"]
+      last_btc = df_btc.iloc[-1]
+      btc_price, btc_rsi = last_btc["close"], last_btc["rsi"]
+      btc_ema10, btc_ema20 = last_btc["ema_10"], last_btc["ema_20"]
+    except Exception as e:
+      print(f"⚠️ Ошибка BTC: {e}")
+      btc_price, btc_rsi, btc_ema10, btc_ema20 = 0, 0, 0, 0
 
     # --- 2. Сбор данных по GRAM (Gate.io) ---
     gram_price, gram_rsi, gram_ema10, gram_ema20 = 0, 0, 0, 0
     try:
-      exchange_gate = ccxt.gate({"timeout": 5000})
+      exchange_gate = ccxt.gate({"timeout": 4000})
       bars_gram = exchange_gate.fetch_ohlcv(
           "GRAM/USDT", timeframe="1h", limit=30
       )
@@ -64,7 +66,7 @@ def home():
       gram_price, gram_rsi = last_gram["close"], last_gram["rsi"]
       gram_ema10, gram_ema20 = last_gram["ema_10"], last_gram["ema_20"]
     except Exception as e:
-      print(f"⚠️ Ошибка загрузки GRAM: {e}")
+      print(f"⚠️ Ошибка GRAM: {e}")
 
     # --- 3. Сбор данных по AZTEC (Gate.io) ---
     aztec_price, aztec_rsi, aztec_ema10, aztec_ema20 = 0, 0, 0, 0
@@ -91,10 +93,10 @@ def home():
       aztec_price, aztec_rsi = last_aztec["close"], last_aztec["rsi"]
       aztec_ema10, aztec_ema20 = last_aztec["ema_10"], last_aztec["ema_20"]
     except Exception as e:
-      print(f"⚠️ Ошибка загрузки AZTEC: {e}")
+      print(f"⚠️ Ошибка AZTEC: {e}")
 
     # --- 4. Получение аналитики от ИИ ---
-    ai_commentary = "ИИ-анализ временно недоступен."
+    ai_commentary = "ИИ-анализ отключен."
     if GEMINI_API_KEY:
       try:
         client = genai.Client(api_key=GEMINI_API_KEY)
@@ -103,7 +105,7 @@ def home():
             f"1. BTC/USD: Цена ${btc_price:,.2f}, RSI {btc_rsi:.2f}\n"
             f"2. GRAM/USDT: Цена ${gram_price:.4f}, RSI {gram_rsi:.2f}\n"
             f"3. AZTEC/USDT: Цена ${aztec_price:.4f}, RSI {aztec_rsi:.2f}\n"
-            "Дай краткий аналитический вердикт по активам (до 5 предложений) на"
+            "Дай краткий аналитический вердикт по активам (до 4 предложений) на"
             " русском языке."
         )
         response = client.models.generate_content(
@@ -111,7 +113,7 @@ def home():
         )
         ai_commentary = response.text
       except Exception as ai_err:
-        ai_commentary = f"ИИ пропущен (лимит/ошибка)."
+        ai_commentary = "ИИ временно недоступен."
 
     # --- 5. Формирование отчета ---
     signal_text = (
@@ -135,16 +137,15 @@ def home():
     if TELEGRAM_TOKEN and CHAT_ID:
       url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
       payload = {"chat_id": CHAT_ID, "text": signal_text}
-      resp = requests.post(url, json=payload, timeout=10)
-      print(f"📥 Telegram API status: {resp.status_code}")
+      requests.post(url, json=payload, timeout=5)
 
     return (
-        f"<h1>🤖 Multi-Crypto Agent</h1><p>✅ Данные успешно собраны и"
-        " отправлены в Telegram!</p>"
+        f"<h1>🤖 Multi-Crypto Agent</h1><p>✅ Данные собраны, отчет отправлен"
+        " в Telegram!</p>"
     )
 
   except Exception as e:
-    err_msg = f"❌ Ошибка: {e}"
+    err_msg = f"❌ Критическая ошибка: {e}"
     print(err_msg)
     return f"<h1>Ошибка</h1><p>{err_msg}</p>", 500
 
