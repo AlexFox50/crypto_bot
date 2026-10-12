@@ -80,25 +80,19 @@ def home():
         f"🧠 Мнение ИИ:\n{ai_commentary}"
     )
 
-    # 4. Отправка в Telegram
     if TELEGRAM_TOKEN and CHAT_ID:
       url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
-      payload = {
-          "chat_id": CHAT_ID,
-          "text": signal_text,
-      }
-      resp = requests.post(url, json=payload, timeout=10)
-      print(f"📥 Ответ от Telegram API: {resp.status_code}")
+      requests.post(
+          url, json={"chat_id": CHAT_ID, "text": signal_text}, timeout=5
+      )
 
-    return (
-        f"<h1>🤖 Crypto AI Agent</h1><p>✅ Успешно! Цена: ${price:,.2f}, RSI:"
-        f" {rsi:.2f}, отчет отправлен в Telegram.</p>"
-    )
+    # Возвращаем минимальный ответ для cron-пингвера
+    return "OK", 200
 
   except Exception as e:
-    err_msg = f"❌ Ошибка в обработчике: {e}"
+    err_msg = f"❌ Ошибка обработчика: {e}"
     print(err_msg)
-    return f"<h1>Ошибка</h1><p>{err_msg}</p>", 500
+    return err_msg, 500
 
 
 if __name__ == "__main__":
