@@ -86,13 +86,13 @@ def home():
           url, json={"chat_id": CHAT_ID, "text": signal_text}, timeout=5
       )
 
-    # Возвращаем минимальный ответ для cron-пингвера
-    return "OK", 200
+    # Возвращаем абсолютно пустой ответ, чтобы cron-пингер не ругался на размер
+    return "", 200
 
   except Exception as e:
     err_msg = f"❌ Ошибка обработчика: {e}"
     print(err_msg)
-    return err_msg, 500
+    return "", 500
 
 
 if __name__ == "__main__":
